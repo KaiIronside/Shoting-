@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎯 Target Shooter</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background:#0a0c0f;
+    font-family:'Share Tech Mono',monospace;
+    overflow:hidden; width:100vw; height:100vh;
+    cursor:none; user-select:none;
+  }
+
+  #gameCanvas { display:block; width:100vw; height:100vh; }
+
+  /* ── HUD ── */
+  #ui {
+    position:fixed; top:0; left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:14px 20px; pointer-events:none; z-index:10; gap:8px;
+  }
+  .stat-box {
+    background:rgba(0,0,0,0.75);
+    border:1px solid rgba(255,220,50,0.35);
+    border-radius:4px; padding:6px 14px; text-align:center; min-width:72px;
+  }
+  .stat-label { font-size:9px; color:rgba(255,220,50,0.55); letter-spacing:2px; text-transform:uppercase; }
+  .stat-value { font-family:'Orbitron',monospace; font-size:22px; font-weight:700; color:#ffdc32; }
+  #diffDisplay { font-size:10px; color:#ff6b6b; font-family:'Orbitron',monospace; margin-top:2px; letter-spacing:1px; }
+
+  #timerBar { position:fixed; bottom:0; left:0; right:0; height:6px; background:rgba(255,255,255,0.08); z-index:10; pointer-events:none; }
+  #timerFill { height:100%; background:linear-gradient(90deg,#00ff88,#ffdc32,#ff4444); background-size:300% 100%; border-radius:0 3px 3px 0; }
+
+  .screen-flash { position:fixed; inset:0; pointer-events:none; z-index:50; opacity:0; transition:opacity 0.05s; }
+  #missFlash  { background:rgba(255,0,0,0.18); }
+  #hitFlash   { background:rgba(0,255,100,0.07); }
+
+  /* ── OVERLAY ── */
+  #overlay {
+    position:fixed; inset:0; background:rgba(5,7,12,0.96);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:100;
+  }
+  #overlay h1 {
+    font-family:'Orbitron',monospace; font-size:clamp(26px,5vw,64px);
+    font-weight:900; color:#ffdc32; letter-spacing:4px;
+    text-shadow:0 0 40px rgba(255,220,50,0.45); margin-bottom:6px;
+  }
+  .sub { font-size:11px; color:rgba(255,255,255,0.3); letter-spacing:3px; margin-bottom:28px; }
+
+  #nameSection { display:flex; flex-direction:column; align-items:center; gap:10px; margin-bottom:24px; }
+  #nameSection label { font-size:10px; color:rgba(255,220,50,0.6); letter-spacing:2px; }
+  #playerName {
+    font-family:'Share Tech Mono',monospace; font-size:18px;
+    background:rgba(255,255,255,0.05); border:1px solid rgba(255,220,50,0.4);
+    color:#fff; padding:8px 20px; border-radius:3px; text-align:center;
+    outline:none; width:240px; letter-spacing:2px;
+  }
+  #playerName:focus { border-color:#ffdc32; box-shadow:0 0 12px rgba(255,220,50,0.2); }
+
+  #finalBlock { display:none; flex-direction:column; align-items:center; margin-bottom:20px; }
+  .final-score-num { font-family:'Orbitron',monospace; font-size:clamp(48px,10vw,108px); font-weight:900; color:#fff; line-height:1; }
+  .final-score-lbl { font-size:10px; color:rgba(255,255,255,0.35); letter-spacing:3px; margin-top:4px; margin-bottom:18px; }
+  .stats-row { display:flex; gap:24px; }
+  .stat-item .val { font-family:'Orbitron',monospace; font-size:24px; font-weight:700; color:#ffdc32; }
+  .stat-item .lbl { font-size:9px; color:rgba(255,255,255,0.3); letter-spacing:2px; margin-top:3px; }
+
+  #lbSection { width:min(480px,90vw); margin-bottom:20px; display:none; }
+  #lbSection h2 { font-family:'Orbitron',monospace; font-size:12px; color:rgba(255,220,50,0.7); letter-spacing:3px; margin-bottom:8px; text-align:center; }
+  #lbList { display:flex; flex-direction:column; gap:3px; max-height:190px; overflow-y:auto; }
+  .lb-row {
+    display:flex; align-items:center; gap:10px;
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07);
+    border-radius:3px; padding:5px 12px;
+  }
+  .lb-row.me { background:rgba(255,220,50,0.09); border-color:rgba(255,220,50,0.3); }
+  .lb-rank { font-family:'Orbitron',monospace; font-size:11px; color:rgba(255,220,50,0.5); width:22px; }
+  .lb-rank.gold   { color:#ffd700; }
+  .lb-rank.silver { color:#c0c0c0; }
+  .lb-rank.bronze { color:#cd7f32; }
+  .lb-name { flex:1; font-size:13px; color:#ddd; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lb-score { font-family:'Orbitron',monospace; font-size:14px; color:#ffdc32; font-weight:700; }
+  .lb-acc { font-size:10px; color:rgba(255,255,255,0.3); margin-left:6px; }
+  #lbStatus { font-size:10px; color:rgba(255,255,255,0.3); text-align:center; margin-top:5px; letter-spacing:1px; }
+
+  .btn-start {
+    font-family:'Orbitron',monospace; font-size:13px; font-weight:700; letter-spacing:3px;
+    padding:13px 44px; background:transparent; border:2px solid #ffdc32;
+    color:#ffdc32; cursor:pointer; border-radius:2px; transition:all 0.15s; margin-top:4px;
+  }
+  .btn-start:hover { background:#ffdc32; color:#0a0c0f; box-shadow:0 0 28px rgba(255,220,50,0.35); }
+
+  #crosshairInfo { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); font-size:10px; color:rgba(255,255,255,0.22); letter-spacing:1px; pointer-events:none; }
+
+  #configBanner {
+    position:fixed; top:0; left:0; right:0; background:rgba(255,80,80,0.13);
+    border-bottom:1px solid rgba(255,80,80,0.25); color:rgba(255,180,180,0.85);
+    font-size:10px; text-align:center; padding:5px; z-index:200; letter-spacing:1px; display:none;
+  }
+
+  #lbList::-webkit-scrollbar { width:3px; }
+  #lbList::-webkit-scrollbar-thumb { background:rgba(255,220,50,0.3); border-radius:2px; }
+</style>
+</head>
+<body>
+
+<div id="configBanner">⚠ Firebase chưa cấu hình — leaderboard lưu tạm thời trên máy này. Xem hướng dẫn trong file HTML.</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="ui">
+  <div class="stat-box">
+    <div class="stat-label">Score</div>
+    <div class="stat-value" id="scoreDisplay">0</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Targets</div>
+    <div class="stat-value" id="targetDisplay">0</div>
+    <div id="diffDisplay"></div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Streak</div>
+    <div class="stat-value" id="streakDisplay">x1</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Time</div>
+    <div class="stat-value" id="timeDisplay">5.0</div>
+  </div>
+</div>
+
+<div id="timerBar"><div id="timerFill" style="width:100%"></div></div>
+<div class="screen-flash" id="missFlash"></div>
+<div class="screen-flash" id="hitFlash"></div>
+<div id="crosshairInfo">CLICK TO SHOOT</div>
+
+<div id="overlay">
+  <h1>TARGET SHOOTER</h1>
+  <div class="sub">EXPONENTIAL DIFFICULTY · GLOBAL LEADERBOARD</div>
+
+  <div id="nameSection">
+    <label>ENTER YOUR NAME</label>
+    <input id="playerName" maxlength="20" placeholder="Player" autocomplete="off" spellcheck="false" />
+  </div>
+
+  <div id="finalBlock">
+    <div class="final-score-num" id="finalScore">0</div>
+    <div class="final-score-lbl">FINAL SCORE</div>
+    <div class="stats-row">
+      <div class="stat-item"><div class="val" id="fHits">0</div><div class="lbl">HITS</div></div>
+      <div class="stat-item"><div class="val" id="fMisses">0</div><div class="lbl">MISSES</div></div>
+      <div class="stat-item"><div class="val" id="fAcc">0%</div><div class="lbl">ACCURACY</div></div>
+      <div class="stat-item"><div class="val" id="fBest">0</div><div class="lbl">STREAK</div></div>
+    </div>
+  </div>
+
+  <div id="lbSection">
+    <h2>🏆 LEADERBOARD</h2>
+    <div id="lbList"></div>
+    <div id="lbStatus"></div>
+  </div>
+
+  <button class="btn-start" id="startBtn" onclick="handleStart()">START GAME</button>
+</div>
+
+<!-- ═══════════ FIREBASE MODULE ═══════════ -->
+<script type="module">
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Dán firebaseConfig của bạn vào đây
+//  (Xem hướng dẫn chi tiết ở cuối file trong comment)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBWKdm8HwPW7cxfXf3Qrh9QQ-ijijAIu3w",
+  authDomain: "shoting-40ec3.firebaseapp.com",
+  projectId: "shoting-40ec3",
+  storageBucket: "shoting-40ec3.firebasestorage.app",
+  messagingSenderId: "997287825168",
+  appId: "1:997287825168:web:f57d637420f1fd80d9df95"
+};
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import { initializeApp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, addDoc, query, orderBy, limit, getDocs, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const configured = FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+let db = null;
+
+if (configured) {
+  try { db = getFirestore(initializeApp(FIREBASE_CONFIG)); }
+  catch(e) { console.warn("Firebase init error:", e); }
+} else {
+  document.getElementById('configBanner').style.display = 'block';
+}
+
+let localBoard = [];
+try { localBoard = JSON.parse(localStorage.getItem('ts_lb') || '[]'); } catch(e){}
+
+window.__fb = {
+  configured,
+  async save(name, score, hits, misses, bestStreak) {
+    const acc = hits+misses > 0 ? Math.round(hits/(hits+misses)*100) : 0;
+    const entry = { name: (name||'Player').slice(0,25), score, hits, misses, acc, bestStreak };
+    if (db) {
+      try { await addDoc(collection(db,'leaderboard'), { ...entry, ts: serverTimestamp() }); }
+      catch(e) { console.warn("Firestore write:", e); }
+    }
+    localBoard.push(entry);
+    localBoard.sort((a,b)=>b.score-a.score);
+    localBoard = localBoard.slice(0,50);
+    try { localStorage.setItem('ts_lb', JSON.stringify(localBoard)); } catch(e){}
+  },
+  async load() {
+    if (db) {
+      try {
+        const snap = await getDocs(query(collection(db,'leaderboard'), orderBy('score','desc'), limit(10)));
+        return snap.docs.map(d=>d.data());
+      } catch(e) { console.warn("Firestore read:", e); }
+    }
+    return localBoard.slice(0,10);
+  }
+};
+
+// show board on page load
+window.addEventListener('load', async () => {
+  document.getElementById('lbSection').style.display = 'block';
+  await window.renderLB();
+});
+</script>
+
+<!-- ═══════════ GAME ENGINE ═══════════ -->
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+let W, H;
+let mouseX=0, mouseY=0;
+let gameRunning=false;
+let score, streak, bestStreak, hits, misses;
+let targets, particles, floatingTexts, shotRings;
+let muzzleFlash, gunRecoil;
+let timeLeft, maxTime, gameTime, _spawnTimer;
+let playerName='';
+let bgStars=[];
+
+function resize(){ W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; }
+resize(); window.addEventListener('resize',resize);
+
+function genStars(){
+  bgStars=[];
+  for(let i=0;i<180;i++)
+    bgStars.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.4,a:Math.random()*0.5+0.1});
+}
+genStars();
+
+window.addEventListener('mousemove',e=>{mouseX=e.clientX;mouseY=e.clientY;});
+window.addEventListener('click',e=>{if(gameRunning)shoot(e.clientX,e.clientY);});
+window.addEventListener('contextmenu',e=>e.preventDefault());
+
+// ─── Exponential difficulty ───────────────────────────────────
+// t = elapsed seconds
+//
+// spawnInterval: 1.4s → 0.1s  (exp decay, halves every ~10s)
+// maxTargets:    2    → 8     (exp saturation curve)
+// baseDrain:     0.35/s → ~4/s (exp growth, doubles every ~12s)
+// drainPerTarget: extra drain per active target on screen
+//
+const SPAWN_BASE=1.4, SPAWN_FLOOR=0.10, SPAWN_K=0.065;
+const MAX_BASE=2, MAX_CAP=8, MAX_K=0.06;
+const DRAIN_BASE=0.35, DRAIN_K=0.058;
+const DRAIN_PER_TGT=0.20;
+
+function diff(t){
+  return {
+    spawnInterval: SPAWN_FLOOR + (SPAWN_BASE-SPAWN_FLOOR)*Math.exp(-SPAWN_K*t),
+    maxTargets:    Math.min(MAX_CAP, Math.round(MAX_BASE+(MAX_CAP-MAX_BASE)*(1-Math.exp(-MAX_K*t)))),
+    baseDrain:     DRAIN_BASE*Math.exp(DRAIN_K*t)
+  };
+}
+
+// ─── Target ──────────────────────────────────────────────────
+class Target {
+  constructor(t){
+    const m=100;
+    this.radius = Math.max(20, 72 - t*0.75);
+    this.x = m+Math.random()*(W-m*2);
+    this.y = m+Math.random()*(H*0.64-m);
+    const spd = (0.5+t*0.05)*(0.6+Math.random()*0.8);
+    const a   = Math.random()*Math.PI*2;
+    this.vx=Math.cos(a)*spd; this.vy=Math.sin(a)*spd;
+    this.rot=0; this.rotSpd=(Math.random()-0.5)*0.025;
+    this.opacity=0; this.hit=false; this.scale=1;
+  }
+  update(){
+    if(this.hit){this.scale+=(0-this.scale)*0.14;this.opacity=Math.max(0,this.opacity-0.09);return;}
+    this.opacity=Math.min(1,this.opacity+0.06);
+    this.x+=this.vx; this.y+=this.vy; this.rot+=this.rotSpd;
+    if(this.x<this.radius||this.x>W-this.radius) this.vx*=-1;
+    if(this.y<this.radius||this.y>H*0.7-this.radius) this.vy*=-1;
+    this.x=Math.max(this.radius,Math.min(W-this.radius,this.x));
+    this.y=Math.max(this.radius,Math.min(H*0.7-this.radius,this.y));
+  }
+  pts(px,py){
+    const d=Math.hypot(px-this.x,py-this.y);
+    if(d>this.radius)return 0;
+    const r=1-d/this.radius;
+    if(r>0.80)return 10; if(r>0.60)return 8;
+    if(r>0.40)return 6;  if(r>0.20)return 4; return 2;
+  }
+  draw(){
+    if(this.opacity<=0)return;
+    ctx.save();
+    ctx.translate(this.x,this.y);
+    ctx.rotate(this.rot);
+    ctx.scale(this.scale,this.scale);
+    ctx.globalAlpha=this.opacity;
+    const rings=[
+      {r:1.00,f:'#1a1a2e',s:'rgba(255,255,255,0.45)'},
+      {r:0.80,f:'#b02020',s:'rgba(255,100,100,0.55)'},
+      {r:0.60,f:'#eeeeee',s:'rgba(255,255,255,0.35)'},
+      {r:0.40,f:'#b02020',s:'rgba(255,80,80,0.45)'},
+      {r:0.20,f:'#ffffff',s:'rgba(255,255,255,0.3)'},
+      {r:0.10,f:'#ffdc32',s:'#ffdc32'},
+    ];
+    for(const rg of rings){
+      ctx.beginPath();ctx.arc(0,0,this.radius*rg.r,0,Math.PI*2);
+      ctx.fillStyle=rg.f;ctx.fill();
+      ctx.strokeStyle=rg.s;ctx.lineWidth=1.2;ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(-this.radius*1.15,0);ctx.lineTo(this.radius*1.15,0);
+    ctx.moveTo(0,-this.radius*1.15);ctx.lineTo(0,this.radius*1.15);
+    ctx.strokeStyle='rgba(255,255,255,0.13)';ctx.lineWidth=1;ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// ─── Particles ───────────────────────────────────────────────
+function spawnParts(x,y,color,n){
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2,s=Math.random()*6+2;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,decay:Math.random()*0.04+0.03,r:Math.random()*4+2,color});
+  }
+}
+
+// ─── Shoot ───────────────────────────────────────────────────
+function shoot(px,py){
+  muzzleFlash=1; gunRecoil=1;
+  shotRings.push({x:px,y:py,r:0,maxR:68,life:1});
+
+  let best=null,bestPts=0;
+  for(const t of targets){
+    if(t.hit)continue;
+    const p=t.pts(px,py);
+    if(p>bestPts){bestPts=p;best=t;}
+  }
+
+  if(best){
+    best.hit=true; hits++; streak++;
+    if(streak>bestStreak)bestStreak=streak;
+    const mult=streak>=5?3:streak>=3?2:1;
+    const earned=bestPts*mult;
+    score+=earned;
+    timeLeft=Math.min(maxTime,timeLeft+1.2);
+    spawnParts(best.x,best.y,bestPts===10?'#ffdc32':'#ff6b6b',bestPts===10?20:12);
+    floatingTexts.push({x:best.x,y:best.y-best.radius,text:(mult>1?`x${mult} `:'')+`+${earned}`,color:bestPts===10?'#ffdc32':'#00ff88',life:1,vy:-2,sz:bestPts===10?30:22});
+    flash('hitFlash',80);
+  } else {
+    misses++; streak=0;
+    timeLeft=Math.max(0.2,timeLeft-0.6);
+    spawnParts(px,py,'#555',5);
+    flash('missFlash',120);
+  }
+  updateHUD();
+}
+
+function flash(id,ms){
+  const el=document.getElementById(id);
+  el.style.opacity='1';
+  setTimeout(()=>el.style.opacity='0',ms);
+}
+
+function updateHUD(){
+  document.getElementById('scoreDisplay').textContent=score;
+  document.getElementById('streakDisplay').textContent='x'+(streak>=5?3:streak>=3?2:1);
+  const active=targets.filter(t=>!t.hit).length;
+  document.getElementById('targetDisplay').textContent=active;
+}
+
+// ─── Draw ────────────────────────────────────────────────────
+function drawBG(){
+  ctx.fillStyle='#0a0c0f';ctx.fillRect(0,0,W,H);
+  for(const s of bgStars){ctx.fillStyle=`rgba(255,255,255,${s.a})`;ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();}
+  const g=ctx.createLinearGradient(0,H*0.6,0,H);
+  g.addColorStop(0,'transparent');g.addColorStop(1,'rgba(0,22,50,0.45)');
+  ctx.fillStyle=g;ctx.fillRect(0,H*0.6,W,H*0.4);
+  ctx.strokeStyle='rgba(0,80,200,0.07)';ctx.lineWidth=1;
+  for(let x=0;x<W;x+=60){ctx.beginPath();ctx.moveTo(x,H*0.6);ctx.lineTo(x-180,H*1.5);ctx.stroke();}
+}
+
+function drawGun(){
+  const cx=W/2,cy=H,ro=gunRecoil*18;
+  ctx.save();ctx.translate(cx,cy+ro);
+  ctx.rotate(Math.atan2(mouseY-(cy+ro),mouseX-cx)-Math.PI/2);
+  ctx.shadowBlur=18;ctx.shadowColor='rgba(0,140,255,0.35)';
+  ctx.fillStyle='#1a1f2e';ctx.beginPath();ctx.roundRect(-17,-118,34,88,5);ctx.fill();
+  ctx.fillStyle='#141820';ctx.beginPath();ctx.roundRect(-21,-138,42,58,4);ctx.fill();
+  ctx.strokeStyle='rgba(90,140,255,0.22)';ctx.lineWidth=1;ctx.strokeRect(-21,-138,42,58);
+  ctx.fillStyle='#0d1017';ctx.beginPath();ctx.roundRect(-7,-143,14,68,3);ctx.fill();
+  if(muzzleFlash>0.05){
+    const a=muzzleFlash;
+    ctx.shadowBlur=36;ctx.shadowColor=`rgba(255,200,50,${a})`;
+    ctx.fillStyle=`rgba(255,200,50,${a*0.9})`;ctx.beginPath();ctx.ellipse(0,-152,11*a,18*a,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=`rgba(255,255,200,${a})`;ctx.beginPath();ctx.ellipse(0,-155,4*a,7*a,0,0,Math.PI*2);ctx.fill();
+  }
+  ctx.fillStyle='#232940';ctx.beginPath();ctx.roundRect(-21,-68,42,28,[0,0,5,5]);ctx.fill();
+  for(let i=0;i<3;i++){ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(-14+i*10,-62,5,16);}
+  ctx.restore();
+  gunRecoil*=0.78;if(gunRecoil<0.01)gunRecoil=0;
+  muzzleFlash*=0.72;
+}
+
+function drawCrosshair(){
+  const x=mouseX,y=mouseY,sz=20,gap=6;
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,0.92)';ctx.lineWidth=2;
+  ctx.shadowBlur=7;ctx.shadowColor='rgba(255,255,255,0.4)';
+  ctx.beginPath();
+  ctx.moveTo(x-sz,y);ctx.lineTo(x-gap,y);ctx.moveTo(x+gap,y);ctx.lineTo(x+sz,y);
+  ctx.moveTo(x,y-sz);ctx.lineTo(x,y-gap);ctx.moveTo(x,y+gap);ctx.lineTo(x,y+sz);
+  ctx.stroke();
+  ctx.beginPath();ctx.arc(x,y,gap,0,Math.PI*2);
+  ctx.strokeStyle='rgba(255,50,50,0.85)';ctx.lineWidth=1.4;ctx.stroke();
+  ctx.fillStyle='rgba(255,50,50,0.7)';ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function drawRings(){
+  for(const r of shotRings){
+    ctx.beginPath();ctx.arc(r.x,r.y,r.r,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(255,255,255,${r.life*0.45})`;ctx.lineWidth=1.8*r.life;ctx.stroke();
+    r.r+=(r.maxR-r.r)*0.14;r.life-=0.07;
+  }
+  shotRings=shotRings.filter(r=>r.life>0);
+}
+
+function drawParts(){
+  for(const p of particles){
+    ctx.globalAlpha=p.life;ctx.fillStyle=p.color;
+    ctx.beginPath();ctx.arc(p.x,p.y,p.r*p.life,0,Math.PI*2);ctx.fill();
+    p.x+=p.vx;p.y+=p.vy;p.vy+=0.2;p.life-=p.decay;
+  }
+  ctx.globalAlpha=1;
+  particles=particles.filter(p=>p.life>0);
+}
+
+function drawTexts(){
+  for(const f of floatingTexts){
+    ctx.font=`bold ${f.sz}px 'Orbitron',monospace`;
+    ctx.fillStyle=f.color;ctx.globalAlpha=f.life;ctx.textAlign='center';
+    ctx.fillText(f.text,f.x,f.y);f.y+=f.vy;f.life-=0.025;
+  }
+  ctx.globalAlpha=1;
+  floatingTexts=floatingTexts.filter(f=>f.life>0);
+}
+
+function drawTimer(){
+  const pct=Math.max(0,timeLeft/maxTime);
+  document.getElementById('timerFill').style.width=(pct*100)+'%';
+  document.getElementById('timerFill').style.backgroundPosition=((1-pct)*100)+'% 0';
+  const col=pct>0.5?'#00ff88':pct>0.25?'#ffdc32':'#ff4444';
+  document.getElementById('timeDisplay').style.color=col;
+  document.getElementById('timeDisplay').textContent=timeLeft.toFixed(1);
+}
+
+// ─── Game loop ───────────────────────────────────────────────
+let _lastNow=0;
+
+function gameLoop(now){
+  if(!gameRunning)return;
+  const dt=Math.min((now-_lastNow)/1000,0.05);
+  _lastNow=now;
+  gameTime+=dt;
+
+  const d=diff(gameTime);
+  const active=targets.filter(t=>!t.hit).length;
+
+  // exponential drain + penalty per live target
+  timeLeft-=dt*(d.baseDrain + active*DRAIN_PER_TGT);
+
+  // difficulty badge
+  const badge = gameTime<8?'':gameTime<18?'▲ RISING':gameTime<35?'▲▲ INTENSE':'▲▲▲ INSANE';
+  document.getElementById('diffDisplay').textContent=badge;
+
+  // spawn
+  _spawnTimer+=dt;
+  if(_spawnTimer>=d.spawnInterval && active<d.maxTargets){
+    _spawnTimer=0;
+    const burst=Math.min(d.maxTargets-active, 1+Math.floor(gameTime/22));
+    for(let i=0;i<burst;i++) targets.push(new Target(gameTime));
+  }
+
+  targets=targets.filter(t=>!t.hit||t.opacity>0);
+  targets.forEach(t=>t.update());
+
+  if(timeLeft<=0){
+    timeLeft=0;
+    drawBG();drawRings();targets.forEach(t=>t.draw());
+    drawParts();drawTexts();drawGun();drawCrosshair();drawTimer();
+    endGame(); return;
+  }
+
+  drawBG();drawRings();targets.forEach(t=>t.draw());
+  drawParts();drawTexts();drawGun();drawCrosshair();drawTimer();
+  requestAnimationFrame(gameLoop);
+}
+
+// ─── Start / End ─────────────────────────────────────────────
+function handleStart(){
+  playerName=(document.getElementById('playerName').value||'Player').trim()||'Player';
+  startGame();
+}
+window.handleStart=handleStart;
+
+document.getElementById('playerName').addEventListener('keydown',e=>{
+  if(e.key==='Enter') handleStart();
+});
+
+function startGame(){
+  document.getElementById('overlay').style.display='none';
+  gameRunning=true;
+  score=0;streak=0;bestStreak=0;hits=0;misses=0;
+  targets=[];particles=[];floatingTexts=[];shotRings=[];
+  muzzleFlash=0;gunRecoil=0;
+  timeLeft=5.0;maxTime=5.0;gameTime=0;_spawnTimer=0;
+  updateHUD();
+  _lastNow=performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+async function endGame(){
+  gameRunning=false;
+  const acc=hits+misses>0?Math.round(hits/(hits+misses)*100):0;
+
+  if(window.__fb) await window.__fb.save(playerName,score,hits,misses,bestStreak);
+
+  document.getElementById('finalBlock').style.display='flex';
+  document.getElementById('finalScore').textContent=score;
+  document.getElementById('fHits').textContent=hits;
+  document.getElementById('fMisses').textContent=misses;
+  document.getElementById('fAcc').textContent=acc+'%';
+  document.getElementById('fBest').textContent=bestStreak;
+  document.getElementById('startBtn').textContent='PLAY AGAIN';
+  document.getElementById('nameSection').style.display='none';
+  document.getElementById('overlay').style.display='flex';
+
+  await window.renderLB();
+}
+
+// ─── Leaderboard renderer ─────────────────────────────────────
+window.renderLB=async function(){
+  const sec=document.getElementById('lbSection');
+  const list=document.getElementById('lbList');
+  const status=document.getElementById('lbStatus');
+  sec.style.display='block';
+  list.innerHTML='';
+  status.textContent='loading...';
+
+  const rows=window.__fb?await window.__fb.load():[];
+  const isGlobal=window.__fb?.configured;
+  status.textContent=isGlobal?`global · ${rows.length} scores`:'local mode — configure Firebase for global leaderboard';
+
+  if(!rows.length){status.textContent+=' · no scores yet';return;}
+  const rnkLbl=['🥇','🥈','🥉'];
+  const rnkCls=['gold','silver','bronze'];
+  rows.forEach((r,i)=>{
+    const isMe=r.name===playerName&&r.score===score;
+    const div=document.createElement('div');
+    div.className='lb-row'+(isMe?' me':'');
+    div.innerHTML=`<span class="lb-rank ${rnkCls[i]||''}">${rnkLbl[i]||'#'+(i+1)}</span>
+      <span class="lb-name">${esc(r.name)}${isMe?' ◀ YOU':''}</span>
+      <span class="lb-score">${r.score}</span>
+      <span class="lb-acc">${r.acc??'?'}%</span>`;
+    list.appendChild(div);
+  });
+};
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+</script>
+
+<!--
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  HƯỚNG DẪN SETUP FIREBASE — ĐỌC KỸ TỪNG BƯỚC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+BƯỚC 1 — Tạo Firebase project
+  1. Vào https://console.firebase.google.com
+  2. Click "Add project" → đặt tên (vd: target-shooter)
+  3. Tắt Google Analytics nếu không cần → "Create project"
+  4. Chờ ~10 giây → Continue
+
+BƯỚC 2 — Tạo Firestore Database
+  1. Sidebar trái: Build > Firestore Database
+  2. Click "Create database"
+  3. Chọn "Start in test mode" → Next
+     (cho phép read/write tự do 30 ngày — đủ để test)
+  4. Chọn region: nam5 (South America) hoặc asia-southeast1
+     → Enable
+
+BƯỚC 3 — Lấy Firebase config
+  1. Click ⚙️ (Project Settings) cạnh "Project Overview"
+  2. Scroll xuống "Your apps" → click biểu tượng </>  (Web app)
+  3. App nickname: "target-shooter" → Register app
+  4. Sao chép object firebaseConfig, trông như này:
+       apiKey: "AIzaSyXXXXXXXXX",
+       authDomain: "target-shooter-xxx.firebaseapp.com",
+       projectId: "target-shooter-xxx",
+       ...
+
+BƯỚC 4 — Dán config vào file này
+  Tìm dòng:
+    const FIREBASE_CONFIG = {
+      apiKey: "YOUR_API_KEY",
+      ...
+    };
+  Thay toàn bộ nội dung bằng config vừa copy.
+
+BƯỚC 5 — Deploy lên GitHub Pages
+  1. Tạo repo mới trên github.com (public, không cần README)
+  2. Upload file shooting-game.html (kéo thả vào repo)
+  3. Settings > Pages > Source: "Deploy from a branch"
+     Branch: main · Folder: / (root) → Save
+  4. Sau 1-2 phút, truy cập:
+     https://[tên-bạn].github.io/[tên-repo]/shooting-game.html
+
+BƯỚC 6 — Thêm domain GitHub vào Firebase (bắt buộc)
+  Nếu không làm bước này, Firebase sẽ báo lỗi CORS/auth.
+  1. Firebase Console > Project Settings > Authorized domains
+  2. "Add domain" → nhập: [tên-bạn].github.io
+  3. Save
+
+BƯỚC 7 (tùy chọn) — Firestore Security Rules cho production
+  Firestore > Rules → thay nội dung bằng:
+
+    rules_version = '2';
+    service cloud.firestore {
+      match /databases/{database}/documents {
+        match /leaderboard/{doc} {
+          allow read: if true;
+          allow create: if request.resource.data.score is int
+                        && request.resource.data.score >= 0
+                        && request.resource.data.score <= 999999
+                        && request.resource.data.name is string
+                        && request.resource.data.name.size() <= 25;
+          allow update, delete: if false;
+        }
+      }
+    }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  CÁCH ĐỌC CÔNG THỨC KHÓ (để hiểu game tăng khó thế nào)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  spawnInterval (giây giữa mỗi lần spawn bia):
+    = 0.10 + 1.30 × e^(-0.065 × t)
+    t=0s  → 1.4s   (chậm, ấm máy)
+    t=10s → 0.79s
+    t=20s → 0.48s
+    t=40s → 0.19s
+    t=60s → 0.11s  (gần sàn 0.10s)
+
+  maxTargets (bia tối đa trên màn):
+    = min(8,  2 + 6×(1 - e^(-0.06 × t)))
+    t=0s  → 2
+    t=12s → 4
+    t=25s → 6
+    t=40s → ~7-8
+
+  timerDrain (tốc độ đếm ngược, giây/giây):
+    = 0.35×e^(0.058×t) + 0.20×(số bia đang sống)
+    t=0s,  0 bia  → 0.35/s
+    t=15s, 3 bia  → 0.85+0.6 = 1.45/s
+    t=30s, 6 bia  → 2.0+1.2  = 3.2/s
+    t=50s, 8 bia  → 5.5+1.6  = 7.1/s  (gần như không thể)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-->
+</body>
+</html>
